@@ -7,7 +7,9 @@ import { pathToFileURL } from "node:url";
 
 const W = +(process.argv[2] || 430);
 const H = +(process.argv[3] || 900);
-const OUT = process.argv[4] || "";
+// 第 4 个参数可能是开关（direct / proxy / fresh…），别把它当成截图路径
+const FLAGS = new Set(["direct", "proxy", "fresh", "manualtest", "tickertest", "serveurl"]);
+const OUT = process.argv[4] && !FLAGS.has(process.argv[4]) ? process.argv[4] : "";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CHROME = process.env.CHROME_PATH || [
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -15,9 +17,11 @@ const CHROME = process.env.CHROME_PATH || [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/usr/bin/google-chrome"
 ].find(p => fs.existsSync(p)) || "chrome";
-const FILE = process.argv.includes("serveurl")
+let FILE = process.argv.includes("serveurl")
   ? "http://127.0.0.1:" + (process.env.PORT || 8791) + "/"
   : pathToFileURL(path.join(ROOT, "index.html")).href;
+// TICKER=NVDA 时带 ?t= 打开，验证某只标的的直连
+if (process.env.TICKER) FILE += "?t=" + encodeURIComponent(process.env.TICKER.toUpperCase());
 const PORT = 9223;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -28,6 +32,8 @@ const chromeArgs = [
   `--remote-debugging-port=${PORT}`, "about:blank"
 ];
 if (process.argv.includes("proxy")) chromeArgs.unshift("--proxy-server=http://127.0.0.1:7890");
+// 系统代理开着但 Clash 没启动时，Chrome 会全部连不上；用 direct 绕过系统代理
+if (process.argv.includes("direct")) chromeArgs.unshift("--no-proxy-server");
 
 const chrome = spawn(CHROME, chromeArgs, { stdio: "ignore" });
 
@@ -80,7 +86,7 @@ try {
     width: W, height: H, deviceScaleFactor: 1, mobile: W < 600
   });
   await send("Page.navigate", { url: FILE });
-  await sleep(7000);
+  await sleep(+(process.env.WAIT || 7000));
 
   if (process.argv.includes("fresh")) {
     await send("Runtime.evaluate", {
@@ -121,7 +127,8 @@ try {
       planRows: [...document.querySelectorAll("#planBody tr")].map(tr =>
         [...tr.children].map(td => td.textContent.trim()).join(" | ")),
       planTest: (() => {
-        const orig = settings.t1Date;
+        const plan = planFor();
+        const orig = plan.t1Date;
         const cases = [];
         const matrix = [
           ["", 700], ["", 480], ["2026-08-01", 450], ["2026-11-01", 450],
@@ -129,12 +136,12 @@ try {
           ["2026-08-01", 520], ["2026-08-01", 600]
         ];
         for (const [t1, px] of matrix) {
-          settings.t1Date = t1;
+          plan.t1Date = t1;
           const ps = planState({ cNow: px });
           cases.push((t1 || "未记录") + " @" + px + ": " + ps.title +
             " | " + ps.hint + " | t2=" + ps.rows[1].state);
         }
-        settings.t1Date = orig;
+        plan.t1Date = orig;
         return cases;
       })(),
       signal: (() => {
@@ -222,6 +229,13 @@ try {
     console.log("JSONP test:", jp.result.value);
   }
   console.log("JS errors:", errors.length ? errors : "none");
+
+  if (process.env.EVAL) {
+    const r = await send("Runtime.evaluate", {
+      expression: process.env.EVAL, awaitPromise: true, returnByValue: true
+    });
+    console.log("eval:", r.result.value ?? JSON.stringify(r.result));
+  }
 
   if (process.argv.includes("ext")) {
     const r = await send("Runtime.evaluate", {
@@ -317,6 +331,42 @@ try {
       returnByValue: true
     });
     console.log("manual test:", r.result.value);
+  }
+
+  if (process.argv.includes("tickertest")) {
+    const r = await send("Runtime.evaluate", {
+      expression: `(async () => {
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+        const snap = tag => ({
+          tag, ticker: state.ticker, title: document.title,
+          price: document.querySelector('#price').textContent,
+          chg: document.querySelector('#chg').textContent.replace(/\\s+/g, ' ').trim(),
+          kYear: document.querySelector('#kYear').textContent,
+          yearSub: document.querySelector('#yearSub').textContent,
+          planRow0: (() => { const tr = document.querySelector('#planBody tr');
+            return tr ? [...tr.children].map(td => td.textContent.trim()).join(' | ') : '—'; })(),
+          holdTitle: document.querySelector('#holdTitle').textContent,
+          holdSub: document.querySelector('#holdSub').textContent,
+          peerRows: document.querySelectorAll('#holdBody tr').length,
+          peerCur: document.querySelectorAll('#holdBody tr.peer-cur').length,
+          score: document.querySelector('#sigScore').textContent,
+          badge: document.querySelector('#sigBadge').textContent,
+          ma5Now: state.yearly && Math.round(state.yearly.ma5Now),
+          notes: document.querySelectorAll('#noteList li:not(.empty)').length,
+          noteSub: document.querySelector('#noteSub').textContent,
+          selVal: document.querySelector('#tickerSel').value
+        });
+        const out = [snap('起始')];
+        for (const c of ['NVDA', 'TSLA', 'QQQ']) {
+          switchTicker(c);
+          await wait(9000);
+          out.push(snap('→' + c));
+        }
+        return JSON.stringify(out);
+      })()`,
+      awaitPromise: true, returnByValue: true
+    });
+    console.log("ticker test:", r.result.value);
   }
 
   if (process.argv.includes("showdlg")) {
