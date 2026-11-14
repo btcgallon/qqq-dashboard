@@ -8,7 +8,8 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/
 
 const CODES = [
   ["QQQ", "105.QQQ"], ["NVDA", "105.NVDA"], ["MSFT", "105.MSFT"], ["AAPL", "105.AAPL"],
-  ["GOOGL", "105.GOOGL"], ["AMZN", "105.AMZN"], ["META", "105.META"], ["TSLA", "105.TSLA"]
+  ["GOOGL", "105.GOOGL"], ["AMZN", "105.AMZN"], ["META", "105.META"], ["TSLA", "105.TSLA"],
+  ["GOLD", "122.XAU"], ["SILVER", "122.XAG"]
 ];
 
 const kline = (secid, klt, lmt) =>

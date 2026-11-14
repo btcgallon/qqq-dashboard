@@ -7,7 +7,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const htmlPath = path.join(root, "index.html");
 const dir = path.join(root, "data");
 
-const CODES = ["QQQ", "NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "TSLA"];
+const CODES = ["QQQ", "NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "TSLA", "GOLD", "SILVER"];
 // QQQ 沿用最早的 id，其余 fallback-NVDA / fallback-year-NVDA
 const elId = (code, year) =>
   code === "QQQ" ? (year ? "fallback-year" : "fallback-data")
